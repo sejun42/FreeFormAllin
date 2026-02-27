@@ -1,237 +1,235 @@
 # FreeFormAllin
 
-FreeFormAllin is a unified Flutter mobile app that combines:
+FreeFormAllin은 다음을 하나로 통합한 Flutter 모바일 앱입니다.
 
-- a WebView shell for the FreeForm web product flow
-- native BLE collection from two IMU nodes (`FF_L`, `FF_R`)
-- local session persistence (`L.bin`, `R.bin`, `session.json`, SQLite/Drift)
-- optional upload to a backend API
-- native Google Sign-In bridging for WebView OAuth limitations
+- FreeForm 웹 서비스를 띄우는 WebView 셸
+- `FF_L`, `FF_R` 두 개 IMU 노드의 네이티브 BLE 수집
+- 로컬 세션 저장(`L.bin`, `R.bin`, `session.json`, SQLite/Drift)
+- 백엔드 업로드(선택)
+- WebView OAuth 제약을 우회하는 네이티브 Google 로그인 브리지
 
-This repository is focused on running one integrated app on Android/iOS for end-to-end workout capture and review.
+이 저장소의 목적은 Android/iOS에서 웹+BLE+세션 관리까지 한 앱으로 일관되게 동작시키는 것입니다.
 
-## Table of Contents
+## 목차
 
-1. [Project Goals](#project-goals)
-2. [Feature Summary](#feature-summary)
-3. [End-to-End Flow](#end-to-end-flow)
-4. [Architecture](#architecture)
-5. [Native-Web Contract](#native-web-contract)
-6. [BLE Protocol](#ble-protocol)
-7. [Session Storage Model](#session-storage-model)
-8. [Upload API Contract](#upload-api-contract)
-9. [Configuration and Settings](#configuration-and-settings)
-10. [Project Structure](#project-structure)
-11. [Prerequisites](#prerequisites)
-12. [Setup and Run](#setup-and-run)
-13. [Testing](#testing)
-14. [Troubleshooting](#troubleshooting)
-15. [Security and Production Notes](#security-and-production-notes)
-16. [Development Notes](#development-notes)
+1. [프로젝트 목표](#프로젝트-목표)
+2. [주요 기능 요약](#주요-기능-요약)
+3. [End-to-End 동작 흐름](#end-to-end-동작-흐름)
+4. [아키텍처](#아키텍처)
+5. [네이티브-웹 계약(Contract)](#네이티브-웹-계약contract)
+6. [BLE 프로토콜](#ble-프로토콜)
+7. [세션 저장 모델](#세션-저장-모델)
+8. [업로드 API 계약](#업로드-api-계약)
+9. [설정(Configuration)](#설정configuration)
+10. [프로젝트 구조](#프로젝트-구조)
+11. [사전 준비](#사전-준비)
+12. [설치 및 실행](#설치-및-실행)
+13. [테스트](#테스트)
+14. [문제 해결 가이드](#문제-해결-가이드)
+15. [보안 및 운영 주의사항](#보안-및-운영-주의사항)
+16. [개발 메모](#개발-메모)
 
-## Project Goals
+## 프로젝트 목표
 
-- Provide a single mobile shell that can host the web UX and still access native BLE.
-- Capture synchronized-ish left/right IMU streams from BLE devices.
-- Persist raw binary sensor payloads for later analysis and backend upload.
-- Push a post-session summary into the web layer automatically.
-- Keep a mock mode for development without hardware.
+- 웹 UX를 유지하면서도 네이티브 BLE 기능을 함께 제공
+- 좌/우 IMU BLE 스트림을 안정적으로 수집
+- 원시 바이너리 센서 데이터를 세션 단위로 보존
+- 세션 종료 후 웹 요약 화면으로 자동 연동
+- 하드웨어 없이 개발 가능한 Mock 모드 유지
 
-## Feature Summary
+## 주요 기능 요약
 
-### Web shell and routing
+### Web 셸 및 화면 라우팅
 
-- App starts on a permissions screen and then enters `WebShellScreen`.
-- Web app is loaded via `webview_flutter`.
-- Native routes are available for:
-  - device scanning/connection
-  - live recording session
-  - session history/details
-  - app settings
+- 앱 시작 화면은 권한 화면(`PermissionsScreen`)입니다.
+- 이후 `WebShellScreen`에서 WebView로 웹 앱을 로드합니다.
+- 네이티브 화면 라우트:
+  - 디바이스 스캔/연결
+  - 라이브 세션 기록
+  - 세션 목록/상세
+  - 앱 설정
 
-### Deep link interception from web to native
+### 웹 -> 네이티브 Deep Link 인터셉트
 
-`freeform://` links inside WebView are intercepted and routed natively:
+WebView 내부 `freeform://` 링크를 네이티브 라우트로 변환합니다.
 
-- `freeform://ble/devices` -> Devices screen
-- `freeform://ble/start?type=squat` -> Live session (with workout type)
-- `freeform://ble/sessions` -> Session list
+- `freeform://ble/devices` -> 디바이스 화면
+- `freeform://ble/start?type=squat` -> 라이브 세션 화면(운동 타입 전달)
+- `freeform://ble/sessions` -> 세션 목록 화면
 
-### Native Google authentication bridge
+### 네이티브 Google 인증 브리지
 
-Because embedded WebView OAuth can fail or be blocked, the app:
+임베디드 WebView에서 OAuth가 제한될 수 있어 앱이 다음을 수행합니다.
 
-- intercepts Google OAuth navigations in WebView
-- runs `google_sign_in` + `firebase_auth` natively
-- writes auth payload into WebView storage for the web layer to consume
+- WebView의 Google OAuth URL 이동을 감지
+- `google_sign_in` + `firebase_auth` 네이티브 로그인 수행
+- 토큰/인증 정보를 WebView 스토리지로 전달
 
-### BLE data capture and live metrics
+### BLE 수집 및 실시간 지표
 
-- Scan for `FF_L` and `FF_R` using a fixed custom BLE service UUID.
-- Connect to both nodes (left and right).
-- Subscribe to notify stream (19-byte IMU packets).
-- Parse packet stream with reassembly support (partial/concatenated packets).
-- Compute drop statistics from sequence gaps.
-- Show live stats:
+- 고정 UUID 서비스 기준으로 `FF_L`, `FF_R` 스캔
+- 좌/우 노드 연결
+- Notify 데이터(19바이트 IMU 패킷) 구독
+- 부분 패킷/결합 패킷 재조립 파싱
+- 시퀀스 갭 기반 드롭률 계산
+- 실시간 표시 지표:
   - packets
   - PPS
   - drop rate
-  - last raw packet values
+  - 마지막 raw IMU 값
 
-### Session persistence
+### 세션 영속화
 
-Per session:
+세션 단위로 아래를 저장합니다.
 
-- create DB row (Drift)
-- create session folder
-- append raw notify payloads into:
+- Drift DB 세션 레코드 생성
+- 세션 폴더 생성
+- 원시 notify payload를 아래 파일로 append:
   - `L.bin`
   - `R.bin`
-- write metadata `session.json`
-- close/update session summary stats in DB on stop
+- `session.json` 메타데이터 작성
+- 세션 종료 시 DB 요약 통계 업데이트
 
-### Web summary injection after session stop
+### 세션 종료 후 Web 요약 자동 주입
 
-When recording stops (if enabled in settings):
+세션 정지 시(설정 ON 기준):
 
-1. Generate workout summary JSON (`WorkoutSessionDataGenerator`)
-2. Inject into WebView localStorage/sessionStorage
-3. Navigate WebView to post-session page (`/workout-summary` by default)
-4. Return from native screen back to web shell
+1. `WorkoutSessionDataGenerator`로 요약 JSON 생성
+2. WebView localStorage/sessionStorage에 주입
+3. 기본 `/workout-summary` 경로로 이동
+4. 네이티브 화면을 닫고 Web 셸로 복귀
 
-### Upload support
+### 업로드 기능
 
-Session directory contents can be uploaded to backend:
+세션 폴더 전체를 multipart로 서버에 업로드할 수 있습니다.
 
 - endpoint: `POST {baseUrl}/api/sessions/upload`
-- multipart with:
-  - field: `session_id`
-  - files: all files in session directory
+- form-data:
+  - `session_id`
+  - 세션 폴더 내 파일 전체(`files` 반복)
 
-## End-to-End Flow
+## End-to-End 동작 흐름
 
-### Primary flow
+### 기본 시나리오
 
-1. Launch app
-2. Grant BLE permissions (or use mock mode)
-3. Web shell opens configured web app URL
-4. Web triggers native BLE deep link (`freeform://...`) or user taps BLE FAB
-5. Connect `FF_L` and `FF_R`
-6. Start recording
-7. Receive and persist BLE data
-8. Stop recording
-9. Inject generated summary to web local storage
-10. Navigate web page to workout summary
-11. Optional: review session detail and upload
+1. 앱 실행
+2. BLE 권한 허용(또는 Mock 모드 사용)
+3. Web 셸에서 설정된 웹 URL 로드
+4. 웹에서 `freeform://...` 호출 또는 앱 내 BLE FAB 탭
+5. `FF_L`, `FF_R` 연결
+6. 세션 시작
+7. BLE 데이터 수신 및 파일 저장
+8. 세션 종료
+9. WebView에 세션 요약 주입
+10. 웹 요약 화면 이동
+11. 필요 시 세션 상세에서 업로드
 
-### Mock mode flow
+### Mock 모드 시나리오
 
-With mock mode on:
+Mock 모드 ON일 때:
 
-- no real hardware required
-- simulated `FF_L`/`FF_R` scan, connection, and 200 Hz data stream
-- intentional small packet drops are included for realism
+- 실제 하드웨어 없이 UI/플로우 테스트 가능
+- 가상 `FF_L`/`FF_R` 스캔/연결 동작
+- 200Hz 유사 데이터 + 소량 의도적 드롭 생성
 
-## Architecture
+## 아키텍처
 
-### High-level view
+### 상위 구조
 
 ```text
 Flutter App
 |- PermissionsScreen
 |- WebShellScreen (WebView)
-|  |- Loads configured Web App URL + native_shell=true
-|  |- Injects JS bridge
-|  |- Intercepts freeform:// deep links
-|  |- Intercepts Google OAuth URLs -> native sign-in
+|  |- 웹 앱 URL + native_shell=true 로드
+|  |- JS 브리지 주입
+|  |- freeform:// 딥링크 인터셉트
+|  |- Google OAuth URL 인터셉트 -> 네이티브 로그인
 |
 |- Native BLE Layer
-|  |- ble_controller.dart (Riverpod state)
-|  |- ReactiveBleClient (real hardware)
-|  |- MockBleClient (simulated hardware)
+|  |- ble_controller.dart (Riverpod 상태)
+|  |- ReactiveBleClient (실기기 BLE)
+|  |- MockBleClient (가상 BLE)
 |  |- PacketParser + SeqTracker
 |
 |- Session Layer
 |  |- SessionController
-|  |- SessionRepository (Drift + filesystem)
+|  |- SessionRepository (Drift + 파일시스템)
 |  |- SessionFileWriter (L.bin, R.bin)
 |
 |- Upload Layer
 |  |- UploadController
-|  |- UploadRepository (Dio multipart)
+|  `- UploadRepository (Dio multipart)
 |
 `- Settings Layer
-   `- SharedPreferences-backed app settings
+   `- SharedPreferences 기반 설정 저장
 ```
 
-### State management
+### 상태 관리
 
-- Riverpod is used for providers and state notifiers.
-- Key provider groups:
-  - BLE adapter/scan/connection/live stats
-  - session state and session list
-  - app settings
-  - upload state
-  - shared WebView controller reference
+- Riverpod 기반 Provider/StateNotifier를 사용합니다.
+- 주요 상태 범주:
+  - BLE 어댑터/스캔/연결/실시간 통계
+  - 세션 상태 및 세션 목록
+  - 앱 설정
+  - 업로드 상태
+  - 전역 WebViewController 참조
 
-## Native-Web Contract
+## 네이티브-웹 계약(Contract)
 
-### Query parameter
-
-When loading the web app, appends:
+### WebView 로드 시 Query 파라미터
 
 - `native_shell=true`
 
-This allows web code to detect native shell context.
+웹 레이어에서 네이티브 셸 컨텍스트를 감지할 때 사용합니다.
 
-### Injected JS globals/channel
+### 주입되는 JS 전역 및 채널
 
-On page load the app injects:
+페이지 로드 후 앱이 주입합니다.
 
 - `window.__FREEFORM_NATIVE__ = true`
-- `window.__FREEFORM_REQUEST_NATIVE_AUTH__(provider)` helper
-- JS channel: `FreeFormNative` for message passing
+- `window.__FREEFORM_REQUEST_NATIVE_AUTH__(provider)`
+- JS 채널: `FreeFormNative`
 
-### Auth payload storage
+### 인증 정보 저장 키
 
-Native sign-in writes:
+네이티브 로그인 후 저장:
 
 - `localStorage["freeform_native_auth"]`
 
-Contains token payload (`idToken`, `accessToken`, provider, timestamp).
+포함 정보: `idToken`, `accessToken`, provider, timestamp
 
-### Workout session storage keys
+### 운동 세션 주입 키
 
-On session stop injection:
+세션 종료 후 저장:
 
 - `localStorage["freeform.activeWorkoutSession"]`
 - `localStorage["freeform.workoutSessionHistory"]`
-- mirrored to `sessionStorage` where possible
+- 가능하면 `sessionStorage`에도 동기 저장
 
-History is deduped by `sessionId` and capped at 500 entries.
+히스토리는 `sessionId` 중복 제거 후 최대 500개로 제한됩니다.
 
-## BLE Protocol
+## BLE 프로토콜
 
-### UUIDs
+### UUID
 
-Defined in `lib/core/constants/uuids.dart`.
+`lib/core/constants/uuids.dart` 기준:
 
 - Service: `a1b2c3d4-e5f6-47a8-9abc-1234567890ab`
-- CMD characteristic (write): `...90ac`
-- DATA characteristic (notify): `...90ad`
-- META characteristic (read): `...90ae`
-- Expected names: `FF_L`, `FF_R`
+- CMD Characteristic(write): `...90ac`
+- DATA Characteristic(notify): `...90ad`
+- META Characteristic(read): `...90ae`
+- 기대 디바이스 이름: `FF_L`, `FF_R`
 
-### Command opcodes
+### 명령 Opcode
 
-Defined in `lib/core/constants/protocol.dart`.
+`lib/core/constants/protocol.dart` 기준:
 
-- `0x01` START payload format: `[cmd, session_uuid_16bytes]`
+- `0x01` START: `[cmd, session_uuid_16bytes]`
 - `0x02` STOP
 - `0x03` PING
-- `0x04` SET_RATE payload format: `[cmd, rate_hz_uint16_le]`
+- `0x04` SET_RATE: `[cmd, rate_hz_uint16_le]`
 
-### IMU packet format (19 bytes)
+### IMU 패킷 포맷(19 bytes)
 
 ```text
 Byte 0      : node_id (0x4C='L', 0x52='R')
@@ -245,20 +243,20 @@ Bytes 15-16 : gy (int16 LE)
 Bytes 17-18 : gz (int16 LE)
 ```
 
-### Drop rate logic
+### 드롭률 계산
 
-`SeqTracker` tracks sequence continuity with wrap-around handling:
+`SeqTracker` 동작:
 
-- expected next sequence is previous + 1 (`uint16`)
-- gap contributes to drop count if gap is within a reasonable threshold
-- drop rate formula:
+- 기대 seq = 이전 seq + 1 (`uint16` wrap-around 고려)
+- 기대값과 다르면 gap을 drop으로 누적(비정상적으로 큰 gap 제외)
+- drop rate:
   - `drops / (packets + drops)`
 
-## Session Storage Model
+## 세션 저장 모델
 
-### File system layout
+### 파일 저장 경로
 
-Under app documents directory:
+앱 문서 디렉터리 하위:
 
 ```text
 freeform/
@@ -269,72 +267,72 @@ freeform/
       `- R.bin
 ```
 
-`session.json` example fields:
+`session.json` 주요 필드:
 
 - `session_id`
 - `started_at`
 - `protocol_version`
 - `app_version`
 
-### SQLite schema (Drift)
+### SQLite 스키마(Drift)
 
-Tables:
+테이블:
 
 - `sessions`
-  - ids, start/end timestamps
-  - left/right device ids
-  - packet/drop counters
-  - estimated Hz values
-  - directory path
-  - upload status/error
+  - 세션 ID, 시작/종료 시각
+  - 좌/우 디바이스 ID
+  - packet/drop 카운트
+  - 추정 Hz
+  - 저장 디렉터리 경로
+  - 업로드 상태/오류
 - `devices`
-  - id, name, last seen, metadata JSON
+  - 디바이스 ID, 이름, 마지막 탐지 시각, 메타 JSON
 
-### Generated workout summary
+### Web 요약 데이터 생성
 
-`WorkoutSessionDataGenerator` produces web-consumable summary JSON from:
+`WorkoutSessionDataGenerator`가 아래 정보를 기반으로 Web 호환 JSON을 생성합니다.
 
-- session metadata
-- packet/drop statistics
-- synthetic metric curves (for current demo behavior)
+- 세션 메타
+- packet/drop 통계
+- 차트/점수용 파생 데이터(현재 데모용 heuristic 포함)
 
-It includes:
+포함 항목:
 
-- safety score and metric blocks
-- warning list
-- IMU-derived chart arrays
-- heartbeat-like downsampled series (capped)
-- optional raw frame samples
+- 안전 점수 및 세부 metric
+- 경고(warnings)
+- IMU 관련 시계열/비교 데이터
+- downsample heartbeat 유사 데이터
+- raw frame 샘플(옵션)
 
-## Upload API Contract
+## 업로드 API 계약
 
-Current client behavior:
+클라이언트 현재 구현:
 
-- method: `POST`
-- path: `/api/sessions/upload`
-- content type: multipart/form-data
-- fields:
+- Method: `POST`
+- Path: `/api/sessions/upload`
+- Content-Type: `multipart/form-data`
+- Form fields:
   - `session_id` (string)
-  - multiple `files` parts (all files from session folder)
-- success condition: status code `200` or `201`
+  - `files` (세션 폴더의 모든 파일)
+- 성공 기준: HTTP `200` 또는 `201`
 
-If upload fails, error text is persisted on the session row.
+실패 시 오류 문자열을 세션 레코드의 `uploadError`에 저장합니다.
 
-## Configuration and Settings
+## 설정(Configuration)
 
-Settings are persisted in `SharedPreferences`.
+설정은 `SharedPreferences`에 저장됩니다.
 
-| Key | Purpose | Default |
+| Key | 의미 | 기본값 |
 | --- | --- | --- |
-| `mock_mode` | Use simulated BLE devices/data | `true` |
-| `web_app_url` | URL loaded in WebView | `https://freeformdb-c3667.web.app` |
-| `enable_auto_inject_to_web` | Auto push session summary to WebView | `true` |
-| `post_session_navigate_path` | Web path after stop | `/workout-summary` |
-| `server_base_url` | Upload server base URL | `http://localhost:8080` |
-| `scan_timeout_sec` | BLE scan timeout setting | `10` |
-| `sample_rate_hz` | Requested sample rate setting | `200` |
+| `mock_mode` | 가상 BLE 사용 여부 | `true` |
+| `web_app_url` | WebView 로드 URL | `https://freeformdb-c3667.web.app` |
+| `enable_auto_inject_to_web` | 세션 종료 후 Web 자동 주입 | `true` |
+| `post_session_navigate_path` | 종료 후 이동 웹 경로 | `/workout-summary` |
+| `server_base_url` | 업로드 서버 Base URL | `http://localhost:8080` |
+| `scan_timeout_sec` | 스캔 타임아웃 설정 | `10` |
+| `sample_rate_hz` | 샘플레이트 설정값 | `200` |
 
-## Project Structure
+## 프로젝트 구조
 
 ```text
 lib/
@@ -393,47 +391,47 @@ lib/
       `- primary_button.dart
 ```
 
-## Prerequisites
+## 사전 준비
 
-### Required tools
+### 필수 툴
 
-- Flutter SDK with Dart `^3.11.0` compatibility
-- Android Studio (for Android builds)
-- Xcode (for iOS builds/macOS only)
-- JDK 17 (Android Gradle config uses Java 17)
+- Flutter SDK (Dart `^3.11.0` 호환)
+- Android Studio
+- Xcode(macOS/iOS 빌드 시)
+- JDK 17 (Android 설정 기준)
 
-### Runtime notes
+### 런타임 참고
 
-- Real BLE capture requires a physical mobile device.
-- Mock mode can run on emulator/simulator for UI and flow testing.
-- Stable network connectivity is required for web app loading and upload.
+- 실 BLE 수집은 실제 모바일 기기가 필요합니다.
+- Mock 모드는 에뮬레이터/시뮬레이터에서 테스트 가능합니다.
+- 웹 로드/업로드를 위해 네트워크 접근이 필요합니다.
 
-## Setup and Run
+## 설치 및 실행
 
-### 1) Install dependencies
+### 1) 의존성 설치
 
 ```bash
 flutter pub get
 ```
 
-### 2) Run app
+### 2) 앱 실행
 
 ```bash
 flutter run
 ```
 
-### 3) Configure web URL inside app
+### 3) 앱 내부 웹 URL 설정
 
-Open Settings and set `Web App URL`:
+Settings에서 `Web App URL` 지정:
 
-- production example: `https://freeformdb-c3667.web.app`
-- local dev example: `http://<your-lan-ip>:3000`
+- 운영 예시: `https://freeformdb-c3667.web.app`
+- 로컬 예시: `http://<내 LAN IP>:3000`
 
-If using a local web server, phone and dev machine must be on same network.
+로컬 웹 서버 사용 시 모바일 기기와 개발 PC가 같은 네트워크에 있어야 합니다.
 
-### 4) Optional local web app development
+### 4) 웹 앱 로컬 개발(선택)
 
-If your web app project is in another directory (example):
+예시 경로:
 
 ```bash
 cd D:\FreeForm\FreeFormApp
@@ -441,110 +439,112 @@ npm install
 npm run dev -- --host 0.0.0.0
 ```
 
-Then set mobile app `Web App URL` accordingly.
+그 후 앱의 `Web App URL`을 해당 주소로 설정합니다.
 
-## Firebase and Google Sign-In Setup
+## Firebase / Google Sign-In 설정
 
-This app initializes Firebase and uses native Google Sign-In.
+앱은 Firebase 초기화 및 네이티브 Google 로그인을 사용합니다.
 
-Checklist:
+체크리스트:
 
-1. Firebase project is created.
-2. Google Sign-In provider enabled in Firebase Auth.
-3. Android `google-services.json` is placed at:
+1. Firebase 프로젝트 생성
+2. Firebase Auth에서 Google provider 활성화
+3. Android 파일 배치:
    - `android/app/google-services.json`
-4. iOS `GoogleService-Info.plist` is placed at:
+4. iOS 파일 배치:
    - `ios/Runner/GoogleService-Info.plist`
-5. Platform-specific OAuth client setup (SHA certs, bundle id, URL schemes) is completed.
+5. 플랫폼별 OAuth 설정:
+   - Android SHA 인증서 등록
+   - iOS 번들 ID/URL Scheme 설정
 
-Without proper Firebase/OAuth setup, native Google sign-in may fail.
+설정이 누락되면 네이티브 Google 로그인 실패 가능성이 높습니다.
 
-## Testing
+## 테스트
 
-Run tests:
+실행:
 
 ```bash
 flutter test
 ```
 
-Current tests cover:
+현재 포함된 테스트 범위:
 
-- `PacketParser` correctness
-  - single packet parse
-  - concatenated packet parse
-  - partial packet reassembly
-  - signed value handling
-- `SeqTracker` logic
-  - drops
-  - wrap-around
-  - reset behavior
+- `PacketParser`
+  - 단일 패킷 파싱
+  - 결합 패킷 파싱
+  - 부분 패킷 재조립
+  - signed int16 처리
+- `SeqTracker`
+  - drop 계산
+  - wrap-around 처리
+  - reset 동작
 - `SessionFileWriter`
-  - file creation
-  - append behavior
-  - close behavior
-  - larger write volume
-- basic widget smoke test
+  - 파일 생성
+  - append 동작
+  - close 동작
+  - 대량 쓰기
+- 기본 위젯 스모크 테스트
 
-## Troubleshooting
+## 문제 해결 가이드
 
-### WebView shows load error
+### WebView 로드 실패
 
-- Verify `Web App URL` in Settings.
-- Ensure device can access that URL in mobile browser.
-- Retry from error screen.
-- Check if HTTPS certificate or DNS issue exists.
+- Settings의 `Web App URL` 확인
+- 모바일 브라우저에서 URL 직접 접속 확인
+- 에러 화면에서 Retry 실행
+- DNS/HTTPS 인증서 문제 여부 확인
 
-### OAuth does not complete in web page
+### OAuth 완료 안 됨
 
-- Expected in embedded browser for some providers.
-- Confirm native Google sign-in popup appears.
-- Validate Firebase/OAuth config for current package/bundle id.
+- WebView 내 OAuth 제한은 일반적으로 발생 가능
+- 네이티브 Google 로그인 팝업이 뜨는지 확인
+- Firebase/OAuth 설정(패키지/번들 기준) 재검증
 
-### Cannot find BLE devices
+### BLE 디바이스가 보이지 않음
 
-- Confirm devices advertise expected name and service UUID.
-- Ensure Bluetooth/location permissions are granted.
-- Ensure BLE is enabled on phone.
-- Disable mock mode when using real devices.
+- 디바이스 광고 이름/Service UUID 확인
+- Bluetooth/Location 권한 허용 확인
+- 휴대폰 Bluetooth ON 확인
+- 실기기 테스트 시 Mock 모드 OFF 확인
 
-### Session recorded but web summary did not appear
+### 세션은 저장됐는데 웹 요약이 안 뜸
 
-- Check `Auto Inject to Web` is enabled.
-- Verify `Post-Session Nav Path` is valid on web app.
-- Verify WebView is still alive (not null controller path).
+- `Auto Inject to Web` ON 여부 확인
+- `Post-Session Nav Path` 유효 경로인지 확인
+- WebViewController가 정상 유지되는지 로그 확인
 
-### Upload fails
+### 업로드 실패
 
-- Check `Upload Base URL`.
-- Confirm backend route `/api/sessions/upload` exists.
-- Ensure device can reach backend network endpoint.
-- Inspect saved `uploadError` from session detail.
+- `Upload Base URL` 확인
+- 서버에 `/api/sessions/upload` 라우트 존재 여부 확인
+- 디바이스에서 서버 네트워크 접근 가능 여부 확인
+- 세션 상세의 `uploadError` 내용 확인
 
-### iOS build/auth issues
+### iOS 빌드/인증 이슈
 
-- Confirm `GoogleService-Info.plist` exists in Runner target.
-- Ensure Info.plist contains Bluetooth usage descriptions.
-- Run `pod install` if CocoaPods state is stale.
+- `GoogleService-Info.plist` Runner 타깃 포함 여부 확인
+- Info.plist Bluetooth usage description 확인
+- CocoaPods 캐시/설치 상태 문제 시 `pod install` 재실행
 
-## Security and Production Notes
+## 보안 및 운영 주의사항
 
-- Use HTTPS for web URL and upload server in production.
-- Review what is stored in localStorage/sessionStorage for auth/session.
-- Avoid committing sensitive files unintentionally.
-- Consider token lifetime and logout synchronization between web/native.
-- Validate backend auth on upload endpoint before accepting files.
+- 운영 환경에서는 웹 URL/업로드 URL 모두 HTTPS 사용 권장
+- localStorage/sessionStorage에 저장되는 인증 데이터 범위 점검
+- 민감 파일 커밋 방지
+- 토큰 만료/로그아웃 동기화 정책 설계 권장
+- 업로드 API 서버 측 인증/검증 필수
 
-## Development Notes
+## 개발 메모
 
-- `isMockModeProvider` controls whether BLE uses mock or reactive client.
-- `webViewControllerProvider` enables cross-screen WebView JS injection/navigation.
-- Session stop currently computes summary from in-memory pre-stop stats.
-- Generated workout analysis is heuristic/demo-oriented, not biomechanical truth.
+- `isMockModeProvider`로 Mock/실BLE 클라이언트 전환
+- `webViewControllerProvider`로 화면 간 WebView 제어 공유
+- 세션 종료 시 pre-stop 통계 기반으로 요약 생성
+- 현재 분석 점수는 데모/히ュー리스틱 성격(의학/운동역학 정확도 보장 아님)
 
-Recommended next engineering improvements:
+추가 개선 권장 항목:
 
-- add integration tests for native-web bridge behavior
-- add explicit command for SET_RATE to match settings value at session start
-- add retry/backoff and auth headers for upload
-- add structured analytics/log export for field debugging
+- 네이티브-웹 브리지 통합 테스트 강화
+- 세션 시작 시 설정값 기반 `SET_RATE` 실제 송신 연동
+- 업로드 재시도/백오프 및 인증 헤더 지원
+- 현장 디버깅용 구조화 로그/진단 내보내기
 
