@@ -1,0 +1,82 @@
+name: freeform_ble_logger
+description: "FreeForm Unified App - Web UI + BLE IMU Sensor Integration"
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # State Management
+  flutter_riverpod: ^2.6.1
+  riverpod_annotation: ^2.6.1
+
+  # Permissions
+  permission_handler: ^11.3.1
+
+  # Networking
+  dio: ^5.9.1
+
+  # Local DB (metadata)
+  drift: ^2.22.1
+  sqlite3_flutter_libs: ^0.5.28
+
+  # File path
+  path_provider: ^2.1.5
+  path: ^1.9.1
+
+  # App settings
+  shared_preferences: ^2.5.4
+
+  # UUID
+  uuid: ^4.5.3
+
+  # Logging
+  logger: ^2.6.2
+
+  # Network status
+  connectivity_plus: ^6.1.1
+
+  # BLE
+  flutter_reactive_ble: ^5.3.1
+
+  # Share/Export
+  share_plus: ^10.1.4
+
+  # Freezed annotations
+  freezed_annotation: ^2.4.4
+  json_annotation: ^4.9.0
+
+  # Intl
+  intl: ^0.19.0
+
+  # WebView for embedding FreeFormApp UI
+  webview_flutter: ^4.12.0
+
+  # Native Google Sign-In (bypasses WebView OAuth restriction)
+  google_sign_in: ^6.2.2
+
+  # Firebase for auth token relay
+  firebase_core: ^3.12.1
+  firebase_auth: ^5.5.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+
+  # Codegen
+  freezed: ^2.5.7
+  json_serializable: ^6.9.2
+  build_runner: ^2.4.15
+  drift_dev: ^2.22.1
+
+flutter:
+  uses-material-design: true
