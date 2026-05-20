@@ -125,6 +125,10 @@ class DeviceConnectionInfo {
   bool get bothConnected =>
       leftState == BleConnectionState.connected &&
       rightState == BleConnectionState.connected;
+
+  bool get anyConnected =>
+      leftState == BleConnectionState.connected ||
+      rightState == BleConnectionState.connected;
 }
 
 class ConnectionController extends StateNotifier<DeviceConnectionInfo> {
