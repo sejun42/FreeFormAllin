@@ -9,8 +9,13 @@ import 'features/settings/application/settings_controller.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Firebase
-  await Firebase.initializeApp();
+  // Firebase is optional for local BLE hardware testing. Production builds can
+  // provide android/app/google-services.json and initialize normally.
+  try {
+    await Firebase.initializeApp();
+  } catch (_) {
+    // Continue without Firebase so BLE scanning/recording can be tested.
+  }
 
   // Initialize SharedPreferences
   final prefs = await SharedPreferences.getInstance();

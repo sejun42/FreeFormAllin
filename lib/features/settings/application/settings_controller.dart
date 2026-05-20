@@ -24,7 +24,7 @@ class AppSettings {
 
   const AppSettings({
     this.serverBaseUrl = 'http://localhost:8080',
-    this.mockMode = true,
+    this.mockMode = false,
     this.scanTimeoutSec = 10,
     this.sampleRateHz = 200,
     this.webAppUrl = 'http://172.30.1.67:3000',
@@ -70,7 +70,9 @@ class SettingsController extends StateNotifier<AppSettings> {
           postSessionNavigatePath: _repo.postSessionNavigatePath,
           enableAutoInjectToWeb: _repo.enableAutoInjectToWeb,
         ),
-      );
+      ) {
+    _ref.read(isMockModeProvider.notifier).state = state.mockMode;
+  }
 
   void setServerBaseUrl(String url) {
     _repo.serverBaseUrl = url;

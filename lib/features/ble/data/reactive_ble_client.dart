@@ -46,7 +46,7 @@ class ReactiveBleClient implements BleClient {
     final controller = StreamController<BleDevice>();
     _scanSub?.cancel();
     _scanSub = _ble.scanForDevices(
-      withServices: [ble.Uuid.parse(BleUuids.freeformService)],
+      withServices: const [],
     ).listen(
       (d) {
         final side = d.name == BleUuids.deviceNameLeft

@@ -169,7 +169,7 @@ class DevicesScreen extends ConsumerWidget {
                   PrimaryButton(
                     label: 'Start Session',
                     icon: Icons.play_arrow,
-                    onPressed: connInfo.bothConnected
+                    onPressed: connInfo.anyConnected
                         ? () =>
                             Navigator.of(context).pushNamed('/live_session')
                         : null,

@@ -18,7 +18,7 @@ class SettingsRepository {
       _prefs.getString(_keyServerUrl) ?? 'http://localhost:8080';
   set serverBaseUrl(String value) => _prefs.setString(_keyServerUrl, value);
 
-  bool get mockMode => _prefs.getBool(_keyMockMode) ?? true;
+  bool get mockMode => _prefs.getBool(_keyMockMode) ?? false;
   set mockMode(bool value) => _prefs.setBool(_keyMockMode, value);
 
   int get scanTimeoutSec => _prefs.getInt(_keyScanTimeout) ?? 10;

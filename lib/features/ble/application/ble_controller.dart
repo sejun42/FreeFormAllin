@@ -11,7 +11,7 @@ import 'packet_parser.dart';
 
 // ── BLE Client Provider ──────────────────────────────────────────
 
-final isMockModeProvider = StateProvider<bool>((ref) => true);
+final isMockModeProvider = StateProvider<bool>((ref) => false);
 
 final bleClientProvider = Provider<BleClient>((ref) {
   final isMock = ref.watch(isMockModeProvider);
@@ -124,6 +124,10 @@ class DeviceConnectionInfo {
 
   bool get bothConnected =>
       leftState == BleConnectionState.connected &&
+      rightState == BleConnectionState.connected;
+
+  bool get anyConnected =>
+      leftState == BleConnectionState.connected ||
       rightState == BleConnectionState.connected;
 }
 

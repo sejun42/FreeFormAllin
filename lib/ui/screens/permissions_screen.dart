@@ -6,6 +6,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../../features/ble/application/ble_controller.dart';
 import '../../features/ble/domain/models.dart';
+import '../../features/settings/application/settings_controller.dart';
 import '../widgets/primary_button.dart';
 
 /// Permissions & BLE adapter status screen.
@@ -44,7 +45,6 @@ class _PermissionsScreenState extends ConsumerState<PermissionsScreen> {
       return [
         Permission.bluetoothScan,
         Permission.bluetoothConnect,
-        Permission.location,
       ];
     } else if (Platform.isIOS) {
       return [Permission.bluetooth];
@@ -64,6 +64,7 @@ class _PermissionsScreenState extends ConsumerState<PermissionsScreen> {
   @override
   Widget build(BuildContext context) {
     final adapterState = ref.watch(bleAdapterStateProvider);
+    final settings = ref.watch(settingsProvider);
     final isMock = ref.watch(isMockModeProvider);
 
     return Scaffold(
@@ -131,7 +132,7 @@ class _PermissionsScreenState extends ConsumerState<PermissionsScreen> {
               const SizedBox(height: 16),
 
               // Mock Mode indicator
-              if (isMock)
+              if (settings.mockMode || isMock)
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -199,8 +200,9 @@ class _PermissionsScreenState extends ConsumerState<PermissionsScreen> {
               PrimaryButton(
                 label: 'Continue to FreeForm',
                 icon: Icons.arrow_forward,
-                onPressed:
-                    (_allGranted || isMock) ? () => _navigateToWebShell() : null,
+                onPressed: (_allGranted || settings.mockMode || isMock)
+                    ? () => _navigateToWebShell()
+                    : null,
               ),
               const SizedBox(height: 32),
             ],
@@ -211,7 +213,7 @@ class _PermissionsScreenState extends ConsumerState<PermissionsScreen> {
   }
 
   void _navigateToWebShell() {
-    Navigator.of(context).pushReplacementNamed('/web_shell');
+    Navigator.of(context).pushReplacementNamed('/devices');
   }
 
   Widget _buildSection(String title, IconData icon, {required Widget child}) {
@@ -273,7 +275,6 @@ class _PermissionsScreenState extends ConsumerState<PermissionsScreen> {
   String _permissionLabel(Permission p) {
     if (p == Permission.bluetoothScan) return 'Bluetooth Scan';
     if (p == Permission.bluetoothConnect) return 'Bluetooth Connect';
-    if (p == Permission.location) return 'Location (for BLE)';
     if (p == Permission.bluetooth) return 'Bluetooth';
     return p.toString();
   }
